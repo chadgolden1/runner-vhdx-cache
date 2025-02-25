@@ -1,0 +1,122 @@
+name: Create and Cache VHDX
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/cache.yml'
+
+  workflow_dispatch:
+  
+jobs:
+  cache:
+    name: Cache
+    runs-on: windows-2025
+    env:
+      TOOL_DRIVE: 'X:'
+      DOTNET_INSTALL_DIR: X:\tools\dotnet
+      DRIVE_FILE_SYSTEM: NTFS
+      TEMP: D:\Temp
+      TMP: D:\Temp
+      POWERSHELL_TELEMETRY_OPTOUT: 1
+
+    steps:
+    - name: Setup
+      run: |
+        New-Item -ItemType Directory -Force -Path D:\Temp
+        New-Item -ItemType Directory -Force -Path D:\Work
+
+    - name: Create and Mount VHDX
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $Drive = New-VHD -Path D:\dev_drive.vhdx -SizeBytes 50GB -Dynamic |
+            Mount-VHD -PassThru |
+            Initialize-Disk -PassThru |
+            New-Partition -UseMaximumSize |
+            Format-Volume -FileSystem ${{ env.DRIVE_FILE_SYSTEM }} -Confirm:$false -Force
+        $Drive | Get-Partition | Set-Partition -NewDriveLetter 'X'
+
+    - name: Download and Install PowerShell 7
+      working-directory: D:\work
+      run: |
+        $installPath = "X:\tools\PowerShell7"
+        $tempZip = "pwsh.zip"
+        New-Item -ItemType Directory -Force -Path $installPath
+        Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v7.5.0/PowerShell-7.5.0-win-x64.zip" -OutFile $tempZip
+        Expand-Archive -Path $tempZip -DestinationPath $installPath -Force
+        Remove-Item $tempZip
+
+    - name: Install Node.js
+      working-directory: D:\work
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+
+        $nodePath = "X:\tools\node"
+        $nodeVersion = "20.18.3"
+        $platform = "win-x64"
+        $nodeUrl = "https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-$platform.zip"
+        $tempFile = Join-Path $env:TEMP "node-v$nodeVersion-$platform.zip"
+
+        # Create installation directory if it doesn't exist
+        if (-not (Test-Path $nodePath)) {
+            New-Item -ItemType Directory -Path $nodePath -Force
+        }
+
+        Invoke-WebRequest -Uri $nodeUrl -OutFile $tempFile
+        Expand-Archive -Path $tempFile -DestinationPath $env:TEMP -Force
+        $extractedDir = Join-Path $env:TEMP "node-v$nodeVersion-$platform"
+        Copy-Item -Path "$extractedDir\*" -Destination $nodePath -Recurse -Force
+
+    - name: Install Git for Windows
+      working-directory: D:\work
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $installerUrl = "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe"
+        $installer = ".\git-installer.exe"
+        Invoke-WebRequest -Uri $installerUrl -OutFile $installer
+            
+         $installArgs = @(
+            "/LOG=X:\git-install.log"
+            "/SILENT"
+            "/NORESTART"
+            "/NOCANCEL"
+            "/SP-"
+            "/CLOSEAPPLICATIONS"
+            "/RESTARTAPPLICATIONS"
+            "/DIR=X:\\tools\Git"
+            "/o:Dir=X:\\tools\Git"
+            "/o:PathOption=CmdTools"
+            "/o:BashTerminalOption=ConHost"
+            "/o:EnableSymlinks=Enabled"
+            "/COMPONENTS=gitlfs"
+         )
+    
+        Start-Process -FilePath $installer -ArgumentList $installArgs -Wait
+
+    - name: Install VS Build Tools
+      run: |
+        winget install `
+            --id "Microsoft.VisualStudio.2022.BuildTools" `
+            --accept-package-agreements `
+            --accept-source-agreements `
+            --override "--installPath ""X:\tools\VS2022BuildTools"" `
+                       --add Microsoft.VisualStudio.Workload.WebBuildTools `
+                       --includeRecommended `
+                       --quiet --wait --norestart"
+
+    - name: Install .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Dismount Drive
+      run: |
+        Dismount-VHD -Path D:\dev_drive.vhdx
+
+    - name: Save VHDX to Cache
+      uses: actions/cache/save@v4
+      with:
+        path: D:\dev_drive.vhdx
+        key: vhdx-cache-${{ github.run_id }}
