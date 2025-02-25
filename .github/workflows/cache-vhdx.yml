@@ -1,11 +1,11 @@
-name: Create and Cache VHDX
+name: cache-vhdx
 
 on:
   push:
     branches:
       - main
     paths:
-      - '**/cache.yml'
+      - '.github/workflows/cache.yml'
 
   workflow_dispatch:
   

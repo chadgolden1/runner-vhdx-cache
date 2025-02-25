@@ -1,11 +1,11 @@
-name: Test Cached VHDX
+name: test-cache-vhdx
 
 on:
   push:
     branches:
       - main
     paths:
-      - '**/test-cache.yml'
+      - '.github/workflows/test-cache.yml'
 
   workflow_dispatch:
 
@@ -24,8 +24,7 @@ jobs:
       run: |
         $Drive = Mount-VHD -Path D:\dev_drive.vhdx -PassThru
         $Drive | Get-Disk | Get-Partition | Where-Object { $_.Type -eq 'Basic' } | Set-Partition -NewDriveLetter 'X'
-        Get-Disk | Get-Partition
-        ls -l X:\
+        #Get-Disk | Get-Partition
 
     - name: Update PATH
       run: |
@@ -35,6 +34,7 @@ jobs:
         Write-Output "X:\tools\Git\cmd" >> $env:GITHUB_PATH
         Write-Output "X:\tools\Git\mingw64\bin" >> $env:GITHUB_PATH
         Write-Output "X:\tools\node" >> $env:GITHUB_PATH
+        Write-Output "X:\tools\VS2022BuildTools\MSBuild\Current\Bin" >> $env:GITHUB_PATH
 
     - name: Verify Tool Installations
       run: |
